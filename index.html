@@ -42,9 +42,14 @@
       background: #0a0a0a;
       border-radius: 12px;
       overflow: hidden;
-      flex: 1;
-      min-width: 0;
-      transition: flex 0.3s ease;
+      flex: 1 1 auto;
+      min-width: 420px;
+      position: relative;
+      transition: box-shadow 0.2s ease;
+    }
+    #tp-wrap.resizing {
+      box-shadow: 0 0 0 1px var(--brand-500), 0 24px 80px rgba(0, 0, 0, 0.45);
+      user-select: none;
     }
 
     #tp-header {
@@ -147,6 +152,29 @@
     #progress-fill { height: 100%; background: var(--brand-500); width: 0%; transition: width 0.1s linear; }
     .divider { width: 1px; height: 26px; background: #2a2a2a; flex-shrink: 0; }
     #kb-hint { text-align: center; padding: 8px; font-size: 12px; color: #2a2a2a; font-family: monospace; }
+
+    #resize-handle {
+      position: absolute;
+      right: 8px;
+      bottom: 8px;
+      width: 22px;
+      height: 22px;
+      border: none;
+      border-radius: 6px;
+      background:
+        linear-gradient(135deg, transparent 0 52%, rgba(255,255,255,0.14) 53% 58%, transparent 59%),
+        linear-gradient(135deg, transparent 0 67%, var(--brand-500) 68% 73%, transparent 74%);
+      cursor: nwse-resize;
+      opacity: 0.7;
+      z-index: 5;
+      touch-action: none;
+    }
+    #resize-handle:hover,
+    #resize-handle:focus-visible {
+      opacity: 1;
+      outline: 1px solid var(--brand-300);
+      outline-offset: 2px;
+    }
 
     /* ── Edit Panel ── */
     #edit-panel {
@@ -280,6 +308,7 @@
       <button class="tp-btn" id="edit-btn" onclick="toggleEdit()">&#9998; Edit</button>
     </div>
     <div id="kb-hint">Space = play/pause &nbsp;|&nbsp; R = reset &nbsp;|&nbsp; + / &minus; = font size &nbsp;|&nbsp; E = edit</div>
+    <button id="resize-handle" type="button" aria-label="Resize teleprompter"></button>
   </div>
 
   <!-- Edit Panel -->
@@ -332,7 +361,11 @@ And every evening, just before sunset, Mara climbed the spiral stairs, turned th
   let lastTime = null;
   let editOpen = false;
   let savedDraft = '';
+  let resizeStart = null;
 
+  const app       = document.getElementById('app');
+  const wrap      = document.getElementById('tp-wrap');
+  const viewport  = document.getElementById('tp-viewport');
   const content   = document.getElementById('tp-content');
   const playBtn   = document.getElementById('play-btn');
   const progress  = document.getElementById('progress-fill');
@@ -340,6 +373,7 @@ And every evening, just before sunset, Mara climbed the spiral stairs, turned th
   const charCount = document.getElementById('char-count');
   const editPanel = document.getElementById('edit-panel');
   const editBtn   = document.getElementById('edit-btn');
+  const resizeHandle = document.getElementById('resize-handle');
 
   function renderScript(text) {
     const paras = text.split(/\n\n+/).map(p => p.trim()).filter(Boolean);
@@ -349,7 +383,14 @@ And every evening, just before sunset, Mara climbed the spiral stairs, turned th
   }
 
   function getMaxScroll() {
-    return content.scrollHeight - document.getElementById('tp-viewport').clientHeight;
+    return Math.max(0, content.scrollHeight - viewport.clientHeight);
+  }
+
+  function syncScrollDisplay() {
+    const max = getMaxScroll();
+    pos = Math.min(pos, max);
+    content.style.transform = `translateY(-${pos}px)`;
+    progress.style.width = max ? `${(pos / max) * 100}%` : '100%';
   }
 
   function updateSpeed(val) {
@@ -440,7 +481,115 @@ And every evening, just before sunset, Mara climbed the spiral stairs, turned th
     charCount.textContent = textarea.value.length.toLocaleString() + ' characters';
   }
 
+  function getResizeLimits() {
+    const appStyles = getComputedStyle(app);
+    const appPadding = parseFloat(appStyles.paddingLeft) + parseFloat(appStyles.paddingRight);
+    const appGap = parseFloat(appStyles.columnGap || appStyles.gap) || 0;
+    const panelWidth = editOpen ? editPanel.getBoundingClientRect().width + appGap : 0;
+    const maxWidth = Math.max(420, Math.min(1500, window.innerWidth - appPadding - panelWidth));
+    const maxHeight = Math.max(360, window.innerHeight - 220);
+
+    return {
+      minWidth: 420,
+      maxWidth,
+      minHeight: 320,
+      maxHeight
+    };
+  }
+
+  function startResize(e) {
+    e.preventDefault();
+    resizeStart = {
+      pointerId: e.pointerId,
+      x: e.clientX,
+      y: e.clientY,
+      width: wrap.getBoundingClientRect().width,
+      height: viewport.getBoundingClientRect().height
+    };
+    wrap.classList.add('resizing');
+    resizeHandle.setPointerCapture(e.pointerId);
+    document.addEventListener('pointermove', resizeTeleprompter);
+    document.addEventListener('pointerup', stopResize);
+    document.addEventListener('pointercancel', stopResize);
+    document.addEventListener('mousemove', resizeTeleprompterFromMouse);
+    document.addEventListener('mouseup', stopResizeFromMouse);
+  }
+
+  function applyResize(clientX, clientY) {
+    const limits = getResizeLimits();
+    const nextWidth = Math.min(limits.maxWidth, Math.max(limits.minWidth, resizeStart.width + clientX - resizeStart.x));
+    const nextHeight = Math.min(limits.maxHeight, Math.max(limits.minHeight, resizeStart.height + clientY - resizeStart.y));
+
+    wrap.style.flex = `0 0 ${nextWidth}px`;
+    viewport.style.height = `${nextHeight}px`;
+    syncScrollDisplay();
+  }
+
+  function resizeTeleprompter(e) {
+    if (!resizeStart || e.pointerId !== resizeStart.pointerId) return;
+    applyResize(e.clientX, e.clientY);
+  }
+
+  function stopResize(e) {
+    if (!resizeStart || e.pointerId !== resizeStart.pointerId) return;
+    document.removeEventListener('pointermove', resizeTeleprompter);
+    document.removeEventListener('pointerup', stopResize);
+    document.removeEventListener('pointercancel', stopResize);
+    document.removeEventListener('mousemove', resizeTeleprompterFromMouse);
+    document.removeEventListener('mouseup', stopResizeFromMouse);
+    resizeStart = null;
+    wrap.classList.remove('resizing');
+    resizeHandle.releasePointerCapture(e.pointerId);
+  }
+
+  function resizeTeleprompterFromMouse(e) {
+    if (!resizeStart || resizeStart.pointerId === 'mouse') return;
+    applyResize(e.clientX, e.clientY);
+  }
+
+  function stopResizeFromMouse() {
+    if (!resizeStart || resizeStart.pointerId === 'mouse') return;
+    document.removeEventListener('pointermove', resizeTeleprompter);
+    document.removeEventListener('pointerup', stopResize);
+    document.removeEventListener('pointercancel', stopResize);
+    document.removeEventListener('mousemove', resizeTeleprompterFromMouse);
+    document.removeEventListener('mouseup', stopResizeFromMouse);
+    resizeStart = null;
+    wrap.classList.remove('resizing');
+  }
+
+  function startMouseResize(e) {
+    if (resizeStart) return;
+    e.preventDefault();
+    resizeStart = {
+      pointerId: 'mouse',
+      x: e.clientX,
+      y: e.clientY,
+      width: wrap.getBoundingClientRect().width,
+      height: viewport.getBoundingClientRect().height
+    };
+    wrap.classList.add('resizing');
+    document.addEventListener('mousemove', mouseResize);
+    document.addEventListener('mouseup', stopMouseResize);
+  }
+
+  function mouseResize(e) {
+    if (!resizeStart || resizeStart.pointerId !== 'mouse') return;
+    applyResize(e.clientX, e.clientY);
+  }
+
+  function stopMouseResize() {
+    if (!resizeStart || resizeStart.pointerId !== 'mouse') return;
+    resizeStart = null;
+    wrap.classList.remove('resizing');
+    document.removeEventListener('mousemove', mouseResize);
+    document.removeEventListener('mouseup', stopMouseResize);
+  }
+
   textarea.addEventListener('input', updateCharCount);
+  resizeHandle.addEventListener('pointerdown', startResize);
+  resizeHandle.addEventListener('mousedown', startMouseResize);
+  window.addEventListener('resize', syncScrollDisplay);
 
   document.addEventListener('keydown', (e) => {
     if (e.target === textarea) return;
