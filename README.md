@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/teleprompter-icon.png" alt="Teleprompter app icon" width="220">
+</p>
+
 # Teleprompter
 
 A simple browser-based teleprompter built as a single HTML file. It includes playback controls, adjustable scroll speed, font-size controls, keyboard shortcuts, and an inline script editor.
