@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Teleprompter — Owen Young</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --brand-50: hsl(245 100% 96%);
+      --brand-100: hsl(245 86% 92%);
+      --brand-300: hsl(245 76% 75%);
+      --brand-500: hsl(245 53% 54%);
+      --brand-600: hsl(245 49% 45%);
+      --brand-700: hsl(245 45% 34%);
+      --brand-800: hsl(245 42% 24%);
+      --brand-900: hsl(245 40% 16%);
+    }
+
+    body {
+      background: #000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    }
+
+    #app {
+      display: flex;
+      align-items: flex-start;
+      gap: 20px;
+      width: 100%;
+      max-width: 1600px;
+      padding: 24px;
+      transition: all 0.3s ease;
+    }
+
+    /* ── Teleprompter ── */
+    #tp-wrap {
+      background: #0a0a0a;
+      border-radius: 12px;
+      overflow: hidden;
+      flex: 1;
+      min-width: 0;
+      transition: flex 0.3s ease;
+    }
+
+    #tp-header {
+      background: #111;
+      padding: 14px 24px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      border-bottom: 1px solid #222;
+    }
+    #tp-header span { font-size: 14px; color: #666; letter-spacing: 0.05em; text-transform: uppercase; flex: 1; }
+    .dot { width: 13px; height: 13px; border-radius: 50%; flex-shrink: 0; }
+    .dot-r { background: #ff5f57; }
+    .dot-y { background: #febc2e; }
+    .dot-g { background: #28c840; }
+
+    #tp-viewport {
+      height: 560px;
+      overflow: hidden;
+      position: relative;
+      padding: 0 80px;
+      background: #0a0a0a;
+    }
+    #fade-top {
+      position: absolute; top: 0; left: 0; right: 0; height: 110px;
+      background: linear-gradient(to bottom, #0a0a0a 30%, transparent);
+      z-index: 2; pointer-events: none;
+    }
+    #fade-bottom {
+      position: absolute; bottom: 0; left: 0; right: 0; height: 110px;
+      background: linear-gradient(to top, #0a0a0a 30%, transparent);
+      z-index: 2; pointer-events: none;
+    }
+    #focus-line {
+      position: absolute; top: 50%; left: 80px; right: 80px;
+      border-top: 1.5px solid var(--brand-700);
+      z-index: 3; pointer-events: none;
+      transform: translateY(-28px);
+    }
+    #tp-content {
+      padding-top: 220px;
+      padding-bottom: 240px;
+      font-size: 38px;
+      line-height: 1.75;
+      color: var(--brand-50);
+      letter-spacing: 0.01em;
+      font-weight: 400;
+      will-change: transform;
+      transition: font-size 0.15s ease;
+    }
+    .para { margin-bottom: 1.4em; }
+
+    #tp-controls {
+      background: #111;
+      border-top: 1px solid #222;
+      padding: 14px 24px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      flex-wrap: wrap;
+    }
+    #tp-controls label { font-size: 13px; color: #555; white-space: nowrap; }
+    #tp-controls input[type=range] { flex: 1; min-width: 80px; accent-color: var(--brand-500); cursor: pointer; }
+
+    .tp-btn {
+      background: #1a1a1a;
+      border: 1px solid #333;
+      color: #bbb;
+      font-family: inherit;
+      font-size: 14px;
+      padding: 8px 18px;
+      border-radius: 8px;
+      cursor: pointer;
+      white-space: nowrap;
+      text-align: center;
+    }
+    .tp-btn:hover { background: #222; color: #fff; }
+    .tp-btn.active { background: var(--brand-900); border-color: var(--brand-500); color: var(--brand-500); }
+    .tp-btn.edit-active { background: var(--brand-900); border-color: var(--brand-300); color: var(--brand-100); }
+
+    .font-btn {
+      background: #1a1a1a;
+      border: 1px solid #333;
+      color: #bbb;
+      font-family: inherit;
+      border-radius: 8px;
+      cursor: pointer;
+      width: 36px;
+      height: 36px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+    .font-btn:hover { background: #222; color: #fff; border-color: #555; }
+
+    #font-size-display { font-size: 12px; color: #444; min-width: 36px; text-align: center; font-family: monospace; }
+    #speed-val { font-size: 12px; color: #444; min-width: 32px; text-align: right; font-family: monospace; }
+    #progress-bar { height: 3px; background: #161616; }
+    #progress-fill { height: 100%; background: var(--brand-500); width: 0%; transition: width 0.1s linear; }
+    .divider { width: 1px; height: 26px; background: #2a2a2a; flex-shrink: 0; }
+    #kb-hint { text-align: center; padding: 8px; font-size: 12px; color: #2a2a2a; font-family: monospace; }
+
+    /* ── Edit Panel ── */
+    #edit-panel {
+      width: 380px;
+      flex-shrink: 0;
+      background: #0f0f0f;
+      border-radius: 12px;
+      border: 1px solid #222;
+      display: none;
+      flex-direction: column;
+      overflow: hidden;
+      align-self: stretch;
+      min-height: 660px;
+    }
+    #edit-panel.open { display: flex; }
+
+    #edit-header {
+      background: #161616;
+      border-bottom: 1px solid #222;
+      padding: 14px 18px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    #edit-header h2 { font-size: 13px; font-weight: 500; color: #888; letter-spacing: 0.06em; text-transform: uppercase; }
+
+    #close-edit {
+      background: none;
+      border: none;
+      color: #555;
+      font-size: 20px;
+      cursor: pointer;
+      line-height: 1;
+      padding: 0 2px;
+    }
+    #close-edit:hover { color: #aaa; }
+
+    #edit-instructions {
+      padding: 12px 18px;
+      font-size: 12px;
+      color: #444;
+      border-bottom: 1px solid #1a1a1a;
+      line-height: 1.6;
+    }
+
+    #edit-textarea {
+      flex: 1;
+      background: #0a0a0a;
+      border: none;
+      outline: none;
+      resize: none;
+      color: var(--brand-100);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-size: 15px;
+      line-height: 1.7;
+      padding: 18px;
+      caret-color: var(--brand-500);
+    }
+    #edit-textarea::placeholder { color: #2a2a2a; }
+    #edit-textarea:focus { background: #0c0c0c; }
+
+    #edit-footer {
+      background: #161616;
+      border-top: 1px solid #222;
+      padding: 12px 18px;
+      display: flex;
+      gap: 10px;
+    }
+
+    .edit-btn {
+      flex: 1;
+      padding: 9px 0;
+      border-radius: 8px;
+      border: 1px solid #333;
+      font-family: inherit;
+      font-size: 14px;
+      cursor: pointer;
+      text-align: center;
+    }
+    #btn-apply {
+      background: var(--brand-900);
+      border-color: var(--brand-500);
+      color: var(--brand-500);
+    }
+    #btn-apply:hover { background: var(--brand-800); }
+    #btn-cancel {
+      background: #1a1a1a;
+      color: #666;
+    }
+    #btn-cancel:hover { background: #222; color: #999; }
+
+    #char-count {
+      font-size: 11px;
+      color: #333;
+      text-align: right;
+      padding: 4px 18px 0;
+      font-family: monospace;
+    }
+  </style>
+</head>
+<body>
+<div id="app">
+
+  <!-- Teleprompter -->
+  <div id="tp-wrap">
+    <div id="tp-header">
+      <div class="dot dot-r"></div>
+      <div class="dot dot-y"></div>
+      <div class="dot dot-g"></div>
+      <span>Teleprompter</span>
+    </div>
+    <div id="progress-bar"><div id="progress-fill"></div></div>
+    <div id="tp-viewport">
+      <div id="fade-top"></div>
+      <div id="fade-bottom"></div>
+      <div id="focus-line"></div>
+      <div id="tp-content"></div>
+    </div>
+    <div id="tp-controls">
+      <button class="tp-btn" id="play-btn" onclick="togglePlay()">&#9654; Play</button>
+      <button class="tp-btn" onclick="resetScroll()">&#8635; Reset</button>
+      <div class="divider"></div>
+      <label>Speed</label>
+      <input type="range" id="speed-slider" min="5" max="120" value="35" oninput="updateSpeed(this.value)">
+      <span id="speed-val">35</span>
+      <div class="divider"></div>
+      <button class="font-btn" onclick="changeFont(-2)" title="Decrease font size" style="font-size:16px;">A</button>
+      <button class="font-btn" onclick="changeFont(2)" title="Increase font size" style="font-size:22px; font-weight:500;">A</button>
+      <span id="font-size-display">38px</span>
+      <div class="divider"></div>
+      <button class="tp-btn" id="edit-btn" onclick="toggleEdit()">&#9998; Edit</button>
+    </div>
+    <div id="kb-hint">Space = play/pause &nbsp;|&nbsp; R = reset &nbsp;|&nbsp; + / &minus; = font size &nbsp;|&nbsp; E = edit</div>
+  </div>
+
+  <!-- Edit Panel -->
+  <div id="edit-panel">
+    <div id="edit-header">
+      <h2>Edit Script</h2>
+      <button id="close-edit" onclick="toggleEdit()" title="Close">&#215;</button>
+    </div>
+    <div id="edit-instructions">
+      Each paragraph becomes a separate block in the teleprompter. Separate paragraphs with a blank line. Click <strong style="color:var(--brand-500);">Apply</strong> when done.
+    </div>
+    <textarea id="edit-textarea" placeholder="Paste or type your script here...&#10;&#10;Each blank line creates a new paragraph."></textarea>
+    <div id="char-count">0 characters</div>
+    <div id="edit-footer">
+      <button class="edit-btn" id="btn-cancel" onclick="cancelEdit()">Cancel</button>
+      <button class="edit-btn" id="btn-apply" onclick="applyEdit()">&#10003; Apply</button>
+    </div>
+  </div>
+
+</div>
+
+<script>
+  const DEFAULT_TEXT = `Hello, my name is Owen Young. I am a freshman at Whitham Academy Homeschool. My project focuses on creating white noises for people suffering from Tinnitus.
+
+Tinnitus is a very common condition affecting approximately 15% to 20% of adults.
+
+It is a symptom of an underlying auditory or neurological condition, often caused by damage to the auditory system, specifically the delicate hair cells in the cochlea.
+
+When I learned that my mother has tinnitus, I was shocked to discover that there was no cure. In most cases, tinnitus is caused by permanent damage.
+
+My goal was to create a series of white noises that more effectively mask various tinnitus tones by increasing the amplitude of those specific tones.
+
+Using an application on my computer called Audacity, I generated different tones and white noise, saving each as an audio file.
+
+Next, I created "enhanced" white noises by increasing the amplitude of the specific tinnitus frequency within the white noise.
+
+Measuring data proved to be a challenge. I displayed the amplitudes of the two white noises relative to the tinnitus tone to highlight which noise obscured the tone.
+
+In the end, results showed that the enhanced white noise masks tinnitus more effectively than normal white noise by blending the tinnitus frequency into the noise.
+
+I created a new, enhanced white noise that masks tinnitus tones better, providing relief to those suffering from the condition. If there's no cure, providing relief is the closest we can get.
+
+Although tinnitus has no cure, my enhanced white noise demonstrates a practical way to provide relief and make daily life more comfortable for those affected.`;
+
+  let playing = false;
+  let pos = 0;
+  let speed = 35;
+  let fontSize = 38;
+  let rafId = null;
+  let lastTime = null;
+  let editOpen = false;
+  let savedDraft = '';
+
+  const content   = document.getElementById('tp-content');
+  const playBtn   = document.getElementById('play-btn');
+  const progress  = document.getElementById('progress-fill');
+  const textarea  = document.getElementById('edit-textarea');
+  const charCount = document.getElementById('char-count');
+  const editPanel = document.getElementById('edit-panel');
+  const editBtn   = document.getElementById('edit-btn');
+
+  function renderScript(text) {
+    const paras = text.split(/\n\n+/).map(p => p.trim()).filter(Boolean);
+    content.innerHTML = paras.map(p =>
+      `<div class="para">${p.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;')}</div>`
+    ).join('');
+  }
+
+  function getMaxScroll() {
+    return content.scrollHeight - document.getElementById('tp-viewport').clientHeight;
+  }
+
+  function updateSpeed(val) {
+    speed = parseInt(val);
+    document.getElementById('speed-val').textContent = val;
+  }
+
+  function changeFont(delta) {
+    fontSize = Math.min(80, Math.max(18, fontSize + delta));
+    content.style.fontSize = fontSize + 'px';
+    document.getElementById('font-size-display').textContent = fontSize + 'px';
+  }
+
+  function togglePlay() {
+    playing = !playing;
+    playBtn.textContent = playing ? '⏸ Pause' : '▶ Play';
+    playBtn.classList.toggle('active', playing);
+    if (playing) { lastTime = null; rafId = requestAnimationFrame(scroll); }
+    else { cancelAnimationFrame(rafId); }
+  }
+
+  function resetScroll() {
+    playing = false;
+    cancelAnimationFrame(rafId);
+    playBtn.textContent = '▶ Play';
+    playBtn.classList.remove('active');
+    pos = 0;
+    content.style.transform = 'translateY(0px)';
+    progress.style.width = '0%';
+  }
+
+  function scroll(ts) {
+    if (!lastTime) lastTime = ts;
+    const delta = ts - lastTime;
+    lastTime = ts;
+    pos += (speed / 1000) * delta;
+    const max = getMaxScroll();
+    if (pos >= max) {
+      pos = max;
+      playing = false;
+      playBtn.textContent = '▶ Play';
+      playBtn.classList.remove('active');
+      progress.style.width = '100%';
+      content.style.transform = `translateY(-${pos}px)`;
+      return;
+    }
+    content.style.transform = `translateY(-${pos}px)`;
+    progress.style.width = `${(pos / max) * 100}%`;
+    if (playing) rafId = requestAnimationFrame(scroll);
+  }
+
+  function toggleEdit() {
+    editOpen = !editOpen;
+    if (editOpen) {
+      savedDraft = textarea.value || getCurrentText();
+      textarea.value = getCurrentText();
+      updateCharCount();
+      editPanel.classList.add('open');
+      editBtn.classList.add('edit-active');
+      textarea.focus();
+    } else {
+      editPanel.classList.remove('open');
+      editBtn.classList.remove('edit-active');
+    }
+  }
+
+  function getCurrentText() {
+    return Array.from(content.querySelectorAll('.para'))
+      .map(el => el.textContent)
+      .join('\n\n');
+  }
+
+  function applyEdit() {
+    const newText = textarea.value.trim();
+    if (newText) {
+      renderScript(newText);
+      resetScroll();
+    }
+    toggleEdit();
+  }
+
+  function cancelEdit() {
+    textarea.value = savedDraft;
+    toggleEdit();
+  }
+
+  function updateCharCount() {
+    charCount.textContent = textarea.value.length.toLocaleString() + ' characters';
+  }
+
+  textarea.addEventListener('input', updateCharCount);
+
+  document.addEventListener('keydown', (e) => {
+    if (e.target === textarea) return;
+    if (e.code === 'Space') { e.preventDefault(); togglePlay(); }
+    if (e.key === 'r' || e.key === 'R') resetScroll();
+    if (e.key === '+' || e.key === '=') changeFont(2);
+    if (e.key === '-' || e.key === '_') changeFont(-2);
+    if (e.key === 'e' || e.key === 'E') toggleEdit();
+  });
+
+  // Init
+  renderScript(DEFAULT_TEXT);
+</script>
+</body>
+</html>
